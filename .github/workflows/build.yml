@@ -29,9 +29,23 @@ jobs:
       - name: Generate app icons
         run: |
           mkdir -p assets
-          cp icon.png assets/icon.png
+          cp icon-only.png icon-foreground.png icon-background.png assets/
           npm install --no-save @capacitor/assets
           npx capacitor-assets generate --android
+      - name: Bigger splash icon (Android 12+)
+        run: |
+          r=android/app/src/main/res
+          mkdir -p $r/drawable $r/values-v31
+          cp splash-icon.png $r/drawable/splash_icon.png
+          cat > $r/values-v31/styles.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+                  <item name="android:windowSplashScreenBackground">#FFFFFF</item>
+                  <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+              </style>
+          </resources>
+          XML
       - run: npx cap sync android
       - name: Storage permission for old Android
         run: |

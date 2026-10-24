@@ -22,7 +22,7 @@ jobs:
            "devDependencies":{"@capacitor/cli":"^6.1.2"}}
           EOF
           cat > capacitor.config.json <<'EOF'
-          {"appId":"com.sohel.pro","appName":"Sohel Pro","webDir":"www"}
+          {"appId":"com.sohelpro.ngoapp","appName":"Sohel Pro","webDir":"www"}
           EOF
       - run: npm install
       - run: npx cap add android
@@ -31,6 +31,17 @@ jobs:
         run: |
           f=android/app/src/main/AndroidManifest.xml
           sed -i 's#<application#<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>\n    <application#' $f
+      - name: Use fixed signing key (optional, keeps updates installable)
+        env:
+          KS: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            mkdir -p ~/.android
+            echo "$KS" | base64 -d > ~/.android/debug.keystore
+            echo "Using fixed keystore"
+          else
+            echo "No DEBUG_KEYSTORE_B64 secret: a new random key will be used"
+          fi
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
         with:

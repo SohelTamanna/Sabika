@@ -26,42 +26,41 @@ jobs:
           EOF
       - run: npm install
       - run: npx cap add android
-      - name: App icons (direct, no extra tool)
+      - name: App icons and splash (from icon.png only)
         run: |
+          test -f icon.png || (echo "icon.png নেই — repo-তে icon.png তুলুন" && exit 1)
           pip install pillow
           python3 - <<'PY'
           from PIL import Image
           import os, glob
           res = 'android/app/src/main/res'
-          logo = Image.open('icon-foreground.png').convert('RGBA')
+          logo = Image.open('icon.png').convert('RGBA')
           logo = logo.crop(logo.getbbox())
-          for d, px in (('mdpi',48),('hdpi',72),('xhdpi',96),('xxhdpi',144),('xxxhdpi',192)):
-              folder = os.path.join(res, 'mipmap-' + d)
-              os.makedirs(folder, exist_ok=True)
-              r = px / max(logo.size)
+          def box(px, frac):
+              inner = round(px * frac)
+              r = inner / max(logo.size)
               im = logo.resize((max(1, round(logo.width * r)), max(1, round(logo.height * r))), Image.LANCZOS)
               c = Image.new('RGBA', (px, px), (0, 0, 0, 0))
               c.alpha_composite(im, ((px - im.width) // 2, (px - im.height) // 2))
+              return c
+          for d, px in (('mdpi',48),('hdpi',72),('xhdpi',96),('xxhdpi',144),('xxxhdpi',192)):
+              folder = os.path.join(res, 'mipmap-' + d)
+              os.makedirs(folder, exist_ok=True)
               for n in ('ic_launcher.png', 'ic_launcher_round.png', 'ic_launcher_foreground.png'):
-                  c.save(os.path.join(folder, n))
+                  box(px, 1.0).save(os.path.join(folder, n))
           for f in glob.glob(os.path.join(res, 'mipmap-anydpi*', '*.xml')):
               os.remove(f)
-          print('icons written')
+          os.makedirs(os.path.join(res, 'drawable'), exist_ok=True)
+          box(1024, 0.64).save(os.path.join(res, 'drawable', 'splash_icon.png'))
+          os.makedirs(os.path.join(res, 'values-v31'), exist_ok=True)
+          open(os.path.join(res, 'values-v31', 'styles.xml'), 'w').write(
+          '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+          '  <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">\n'
+          '    <item name="android:windowSplashScreenBackground">#FFFFFF</item>\n'
+          '    <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>\n'
+          '  </style>\n</resources>\n')
+          print('icons and splash written')
           PY
-      - name: Bigger splash icon (Android 12+)
-        run: |
-          r=android/app/src/main/res
-          mkdir -p $r/drawable $r/values-v31
-          cp splash-icon.png $r/drawable/splash_icon.png
-          cat > $r/values-v31/styles.xml <<'XML'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
-                  <item name="android:windowSplashScreenBackground">#FFFFFF</item>
-                  <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
-              </style>
-          </resources>
-          XML
       - run: npx cap sync android
       - name: Storage permission for old Android
         run: |

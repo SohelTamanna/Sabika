@@ -26,12 +26,28 @@ jobs:
           EOF
       - run: npm install
       - run: npx cap add android
-      - name: Generate app icons
+      - name: App icons (direct, no extra tool)
         run: |
-          mkdir -p assets
-          cp icon-only.png icon-foreground.png icon-background.png assets/
-          npm install --no-save @capacitor/assets
-          npx capacitor-assets generate --android
+          pip install pillow
+          python3 - <<'PY'
+          from PIL import Image
+          import os, glob
+          res = 'android/app/src/main/res'
+          logo = Image.open('icon-foreground.png').convert('RGBA')
+          logo = logo.crop(logo.getbbox())
+          for d, px in (('mdpi',48),('hdpi',72),('xhdpi',96),('xxhdpi',144),('xxxhdpi',192)):
+              folder = os.path.join(res, 'mipmap-' + d)
+              os.makedirs(folder, exist_ok=True)
+              r = px / max(logo.size)
+              im = logo.resize((max(1, round(logo.width * r)), max(1, round(logo.height * r))), Image.LANCZOS)
+              c = Image.new('RGBA', (px, px), (0, 0, 0, 0))
+              c.alpha_composite(im, ((px - im.width) // 2, (px - im.height) // 2))
+              for n in ('ic_launcher.png', 'ic_launcher_round.png', 'ic_launcher_foreground.png'):
+                  c.save(os.path.join(folder, n))
+          for f in glob.glob(os.path.join(res, 'mipmap-anydpi*', '*.xml')):
+              os.remove(f)
+          print('icons written')
+          PY
       - name: Bigger splash icon (Android 12+)
         run: |
           r=android/app/src/main/res

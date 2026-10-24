@@ -284,6 +284,7 @@ table.simple th{color:var(--ink-soft);font-weight:700}
 .topbar.home-style .icon-btn{background:rgba(255,255,255,.16);color:#fff}
 .topbar.home-style .icon-btn:active{background:rgba(255,255,255,.28)}
 .topbar.home-style .titleblock h1{color:#fff;font-size:18px}
+.topbar.home-style .titleblock{cursor:pointer}
 .topbar.home-style .titleblock .sub{color:rgba(255,255,255,.85)}
 .home-avatar-btn{
   width:42px;height:42px;border-radius:50%;overflow:hidden;flex:none;border:2px solid rgba(255,255,255,.6);
@@ -2231,7 +2232,8 @@ document.addEventListener("DOMContentLoaded", function(){
   document.querySelectorAll(".nav-list button[data-nav]").forEach(b=>{
     b.addEventListener("click", ()=> navigate(b.dataset.nav));
   });
-  document.getElementById("sidebar-head").addEventListener("click", ()=> navigate("home"));
+  document.getElementById("sidebar-head").addEventListener("click", ()=> navigate("dashboard"));
+  document.querySelector("#topbar .titleblock").addEventListener("click", ()=>{ if(document.getElementById("topbar").classList.contains("home-style")) navigate("dashboard"); });
   document.getElementById("home-avatar-btn").addEventListener("click", ()=> navigate("profile"));
   document.getElementById("topbar-search-btn").addEventListener("click", ()=>{
     if(window.SP && window.SP.pickMember){

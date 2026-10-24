@@ -1,1 +1,69 @@
-
+name: Build APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - name: Create project files
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+          cat > package.json <<'EOF'
+          {"name":"sohel-pro","version":"1.0.0","private":true,
+           "dependencies":{"@capacitor/core":"^6.1.2","@capacitor/android":"^6.1.2","@capacitor/filesystem":"^6.0.1","@capacitor/share":"^6.0.2"},
+           "devDependencies":{"@capacitor/cli":"^6.1.2"}}
+          EOF
+          cat > capacitor.config.json <<'EOF'
+          {"appId":"com.sohelpro.ngoapp","appName":"Sohel Pro","webDir":"www"}
+          EOF
+      - run: npm install
+      - run: npx cap add android
+      - name: Generate app icons
+        run: |
+          mkdir -p assets
+          cp icon-only.png icon-foreground.png icon-background.png assets/
+          npm install --no-save @capacitor/assets
+          npx capacitor-assets generate --android
+      - name: Bigger splash icon (Android 12+)
+        run: |
+          r=android/app/src/main/res
+          mkdir -p $r/drawable $r/values-v31
+          cp splash-icon.png $r/drawable/splash_icon.png
+          cat > $r/values-v31/styles.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+                  <item name="android:windowSplashScreenBackground">#FFFFFF</item>
+                  <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+              </style>
+          </resources>
+          XML
+      - run: npx cap sync android
+      - name: Storage permission for old Android
+        run: |
+          f=android/app/src/main/AndroidManifest.xml
+          sed -i 's#<application#<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>\n    <application#' $f
+      - name: Use fixed signing key (optional, keeps updates installable)
+        env:
+          KS: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            mkdir -p ~/.android
+            echo "$KS" | base64 -d > ~/.android/debug.keystore
+            echo "Using fixed keystore"
+          else
+            echo "No DEBUG_KEYSTORE_B64 secret: a new random key will be used"
+          fi
+      - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SohelPro-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk

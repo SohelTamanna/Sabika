@@ -9046,13 +9046,22 @@ async function recoverySnapshot(tag,payload){
 async function fetchRemoteLatest(cfg,serverRev){
   const adm=getAdm(); if(!adm) return {ok:false,code:"need_admin"};
   const l=await callServer(cfg,{action:"list",token:cfg.token,adminToken:adm},30000); syncProg();
-  if(l.ok!==true) return {ok:false,code:ERR[l.code]?l.code:"remote_invalid",http:l.http};
-  const files=(l.files||[]).map(f=>({f,r:(/-r(\d+)\.json$/.exec(f&&f.name||"")||[])[1]})).filter(x=>x.r!=null);
-  let pick=files.find(x=>Number(x.r)===serverRev); if(!pick&&files.length) pick=files.slice().sort((a,b)=>Number(b.r)-Number(a.r))[0];
-  if(!pick) return {ok:false,code:"remote_invalid"};
-  const g=await driveGet(cfg,adm,pick.f.id); syncProg();
-  if(!g.ok) return {ok:false,code:"remote_invalid",detail:g.msg};
-  return {ok:true,payload:g.payload,content:g.content,fileName:pick.f.name,rev:Number(pick.r)};
+  if(l.ok!==true) return {ok:false,code:(l.code==="auth"||l.code==="locked"||l.code==="timeout"||l.code==="network")?l.code:"remote_invalid",http:l.http,detail:"তালিকা আনা যায়নি: "+(l.code||"?")+(l.msg?" "+l.msg:"")+(l.code==="auth"?" (ADMIN Token ভুল?)":"")};
+  const all=(l.files||[]).filter(f=>f&&f.id&&f.name);
+  if(!all.length) return {ok:false,code:"remote_invalid",detail:"Drive তালিকা খালি (সার্ভার rev "+serverRev+")"};
+  const rn=f=>{ const m=/-r(\d+)\.json$/.exec(f.name||""); return m?Number(m[1]):null; };
+  const tm=f=>Date.parse(f.modified||f.modifiedTime||f.updated||f.createdTime||"")||0;
+  /* candidates: exact revision, then highest revision, then newest by time/name; try each until one validates */
+  const cand=[]; const exact=all.find(f=>rn(f)===serverRev); if(exact) cand.push(exact);
+  all.filter(f=>rn(f)!=null&&f!==exact).sort((x,y)=>rn(y)-rn(x)).forEach(f=>cand.push(f));
+  all.filter(f=>rn(f)==null).sort((x,y)=>(tm(y)-tm(x))||String(y.name).localeCompare(String(x.name))).forEach(f=>cand.push(f));
+  let lastMsg="";
+  for(const f of cand.slice(0,4)){
+    const g=await driveGet(cfg,adm,f.id); syncProg();
+    if(g.ok) return {ok:true,payload:g.payload,content:g.content,fileName:f.name,rev:rn(f)!=null?rn(f):serverRev};
+    lastMsg=f.name+": "+g.msg;
+  }
+  return {ok:false,code:"remote_invalid",detail:"কোনো কপি পড়া যায়নি — "+lastMsg+" · ফাইল "+all.length+"টি: "+all.slice(0,3).map(f=>f.name).join(", ")};
 }
 /* compare by stable ids. missing = in remote only (safe to ADD). differing = same id (or same business key) but different content (NEVER auto-resolved). */
 function compareData(local,remote){

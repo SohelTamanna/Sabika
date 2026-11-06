@@ -26,7 +26,7 @@ jobs:
           EOF
       - run: npm install
       - run: npx cap add android
-      - name: App icons and splash (from icon.png only)
+      - name: App icons and blank splash (from icon.png only)
         run: |
           test -f icon.png || (echo "icon.png নেই — repo-তে icon.png তুলুন" && exit 1)
           pip install pillow
@@ -50,8 +50,15 @@ jobs:
                   box(px, 1.0).save(os.path.join(folder, n))
           for f in glob.glob(os.path.join(res, 'mipmap-anydpi*', '*.xml')):
               os.remove(f)
+          # ---- splash: NO icon in the middle (plain white) ----
+          for f in glob.glob(os.path.join(res, 'drawable*', 'splash*.png')):
+              os.remove(f)
           os.makedirs(os.path.join(res, 'drawable'), exist_ok=True)
-          box(1024, 0.64).save(os.path.join(res, 'drawable', 'splash_icon.png'))
+          open(os.path.join(res, 'drawable', 'splash.xml'), 'w').write(
+          '<?xml version="1.0" encoding="utf-8"?>\n'
+          '<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">\n'
+          '  <solid android:color="#FFFFFF"/>\n</shape>\n')
+          Image.new('RGBA', (1024, 1024), (0, 0, 0, 0)).save(os.path.join(res, 'drawable', 'splash_icon.png'))
           os.makedirs(os.path.join(res, 'values-v31'), exist_ok=True)
           open(os.path.join(res, 'values-v31', 'styles.xml'), 'w').write(
           '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
@@ -59,7 +66,7 @@ jobs:
           '    <item name="android:windowSplashScreenBackground">#FFFFFF</item>\n'
           '    <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>\n'
           '  </style>\n</resources>\n')
-          print('icons and splash written')
+          print('icons written, blank splash written')
           PY
       - run: npx cap sync android
       - name: Storage permission for old Android

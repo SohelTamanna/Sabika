@@ -1003,6 +1003,8 @@ body.theme-dark .mc-gt{background:#132a20;color:#e8f0ec}
 body.theme-dark .mc-ac button{background:#213028}
 body.theme-dark .mc-si button{background:#25302b;color:#e8f0ec}
 html,body{overscroll-behavior-y:none}
+#topbar,#topbar *,.sidebar-head,.sidebar-head *,.home4-card,.home4-card *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+#topbar input,#topbar textarea{-webkit-user-select:text;user-select:text}
 </style>
 </head>
 <body>
@@ -2232,8 +2234,8 @@ document.addEventListener("DOMContentLoaded", function(){
   document.querySelectorAll(".nav-list button[data-nav]").forEach(b=>{
     b.addEventListener("click", ()=> navigate(b.dataset.nav));
   });
-  document.getElementById("sidebar-head").addEventListener("click", ()=> navigate("dashboard"));
-  document.querySelector("#topbar .titleblock").addEventListener("click", ()=>{ if(document.getElementById("topbar").classList.contains("home-style")) navigate("dashboard"); });
+  document.getElementById("sidebar-head").addEventListener("click", ()=> navigate("home"));
+  document.querySelector("#topbar .titleblock").addEventListener("click", ()=>{ if(document.getElementById("topbar").classList.contains("home-style")) navigate("home"); });
   document.getElementById("home-avatar-btn").addEventListener("click", ()=> navigate("profile"));
   document.getElementById("topbar-search-btn").addEventListener("click", ()=>{
     if(window.SP && window.SP.pickMember){
@@ -2522,15 +2524,14 @@ const HOME_MENU = [
 const HOME_CARDS = [
   {to:"collection", icon:"💰", en:"Daily Collection", bn:"দৈনিক কালেকশন", sub:"Break + Next", g:"linear-gradient(135deg,#0b7a52,#18b97f)"},
   {to:"moneycount", icon:"💵", en:"Money Count", bn:"টাকার হিসাব", sub:"নোট গণনা", g:"linear-gradient(135deg,#c98a0a,#f2b83a)"},
-  {to:"calculator/kisti", icon:"🧮", en:"NGO কিস্তি Calculator", bn:"BURO Bangladesh", sub:"ঋণ কিস্তি ক্যালকুলেটর", g:"linear-gradient(135deg,#2358c9,#4d8bff)"},
-  {to:"acctxn", icon:"📒", en:"NGO Calculation", bn:"Account Transaction", sub:"সঞ্চয় · ঋণ · মেয়াদি", g:"linear-gradient(135deg,#6a3fc9,#9b72f0)"}
+  {to:"calculator/kisti", icon:"🧮", en:"NGO কিস্তি Calculator", bn:"BURO Bangladesh", sub:"ঋণ কিস্তি ক্যালকুলেটর", g:"linear-gradient(135deg,#2358c9,#4d8bff)"}
 ];
 (function(){ if(document.getElementById("home4-css")) return; const st=document.createElement("style"); st.id="home4-css";
-  st.textContent=`.home4{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .home4-card{display:flex;flex-direction:column;justify-content:space-between;min-height:168px;padding:16px 14px;border-radius:20px;color:#fff;cursor:pointer;box-shadow:0 6px 16px rgba(0,0,0,.22);-webkit-tap-highlight-color:transparent;position:relative;overflow:hidden}
+  st.textContent=`.home4{display:grid;grid-template-columns:1fr;gap:14px}
+  .home4-card{display:flex;flex-direction:row;align-items:center;gap:16px;min-height:120px;padding:16px 14px;border-radius:20px;color:#fff;cursor:pointer;box-shadow:0 6px 16px rgba(0,0,0,.22);-webkit-tap-highlight-color:transparent;position:relative;overflow:hidden}
   .home4-card:active{transform:scale(.97)}
-  .home4-card .ic{width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:30px}
-  .home4-card .en{font-size:16px;font-weight:800;line-height:1.25;margin-top:12px}
+  .home4-card .ic{flex:none;width:64px;height:64px;border-radius:16px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:30px}
+  .home4-card .en{font-size:17px;font-weight:800;line-height:1.25}
   .home4-card .bn{font-size:13px;opacity:.95;margin-top:2px;font-weight:600}
   .home4-card .sub{font-size:11.5px;opacity:.85;margin-top:6px}`;
   document.head.appendChild(st); })();
@@ -8966,16 +8967,22 @@ function markDirty(){ try{ markDirty_(); }finally{ try{ chipUpdate(); }catch(e){
 function markDirty_(){
   dirtyCounter++; try{ scheduleMirror(); }catch(e){}
   const cfg=rdj(CFG_KEY,null); if(!cfg||!cfg.url||!cfg.token) return;
-  if(!cfg.dirty){ cfg.dirty=true; cfg.dirtyAt=S.nowISO(); wrj(CFG_KEY,cfg); }
+  cfg.localVer=(cfg.localVer||0)+1;
+  if(!cfg.dirty){ cfg.dirty=true; cfg.dirtyAt=S.nowISO(); }
+  wrj(CFG_KEY,cfg);
   if(cfg.auto!==false) schedule(60000);
 }
 function schedule(ms){ clearTimeout(timer); timer=setTimeout(()=>autoTick("change"),ms); }
 function autoTick(reason){
   const cfg=rdj(CFG_KEY,null); if(!cfg||!cfg.url||!cfg.token||cfg.auto===false) return;
   if(!navigator.onLine) return;
+  if(syncing) return;
+  if(cfg.lastErr&&NO_RETRY.has(cfg.lastErr.code)) return;          /* blocked until the user acts (token, conflict review, manual sync) - no endless identical failures */
+  if(cfg.retry&&cfg.retry.exhausted) return;                       /* retry cap reached: manual Sync only */
   if(cfg.retry&&cfg.retry.nextAt&&Date.now()<cfg.retry.nextAt){ schedule(Math.max(5000,cfg.retry.nextAt-Date.now())); return; }
-  const stale=!cfg.lastOk||Date.now()-Date.parse(cfg.lastOk.at)>24*3600*1000;
-  if(cfg.dirty||stale) runSync({trigger:reason,silent:true});
+  const lo=cfg.lastOk&&revOk(cfg.lastOk.revision)?cfg.lastOk:rdj(LASTOK_KEY,null);
+  const notToday=!lo||dhakaDay(Date.parse(lo.at))!==dhakaDay();     /* daily backup: at least one confirmed upload per Dhaka day */
+  if(cfg.dirty||notToday) runSync({trigger:reason,silent:true});
 }
 
 /* --- network call: text/plain body => "simple" request, no CORS preflight (Apps Script cannot answer OPTIONS) --- */
@@ -8990,7 +8997,125 @@ async function callServer(cfg, body, timeoutMs){
   finally{ clearTimeout(to); }
 }
 
-/* --- upload (Success ONLY when the server confirms storage + echoes our hash) --- */
+/* ================= SYNC v2 (handshake + safe reconcile + verified upload) =================
+   ROOT-CAUSE FIX: the old code sent baseRevision:null whenever cfg.lastOk was missing, the server (rev N>0) answered
+   "conflict: client base=null server=N", and "conflict" was in NO_RETRY - so nothing ever recovered, while autoTick
+   kept re-firing the same doomed request. Now every sync FIRST asks the server for its real revision, and when it differs
+   from the locally CONFIRMED one it downloads the server copy, compares by stable ids, and only ever ADDS missing records.
+   Records that differ are never overwritten without an explicit user decision. */
+const LASTOK_KEY="sp_sync_lastok", MAX_RETRIES=6;
+Object.assign(ERR,{
+  need_admin:"সার্ভারের revision আর এই ফোনে সংরক্ষিত revision মেলেনি। নিরাপদে মেলাতে ADMIN Token লাগবে — “সংরক্ষিত সংযোগ” অংশে ADMIN Token দিয়ে আবার Sync করুন। কিছুই বদলানো/ওভাররাইট হয়নি",
+  conflict_review:"সার্ভারের কপির সাথে এই ফোনের কিছু রেকর্ড ভিন্ন — আপনার সিদ্ধান্ত ছাড়া কিছুই ওভাররাইট করা হয়নি। নিচের Sync Dashboard থেকে পর্যালোচনা করুন",
+  verify_failed:"আপলোডের পর সার্ভারের মেটাডেটা যাচাই মেলেনি — সফল ধরা হয়নি (পরের Sync নিজে মিলিয়ে নেবে)",
+  snapshot_failed:"মার্জের আগে জরুরি কপি রাখা যায়নি — ডেটা বদলানো হয়নি",
+  status_failed:"সার্ভারের বর্তমান revision জানা যায়নি — আপলোড করা হয়নি",
+  remote_invalid:"সার্ভারের সর্বশেষ কপি পড়া/যাচাই করা যায়নি — কিছুই বদলানো হয়নি",
+  merge_failed:"মার্জ ব্যর্থ — স্থানীয় ডেটা অক্ষত আছে", exhausted:"বারবার চেষ্টা ব্যর্থ — স্বয়ংক্রিয় চেষ্টা থেমেছে, “এখনই Sync” চাপুন"
+});
+["need_admin","conflict_review"].forEach(c=>NO_RETRY.add(c)); NO_RETRY.delete("conflict");   /* a server conflict is now re-handshaken, not terminal */
+
+const SYNC_KEYS=["surveys","members","loans","savings","centers","followups","areas","somities","collections","sessions","bundles","cashCounts","periods","dayClosings","corrections","checklists","collFollowups"];
+const FIN_KEYS=new Set(["collections","sessions","bundles","cashCounts","periods","dayClosings","corrections","loans","savings"]);
+const dhakaDay=t=>new Date((t==null?Date.now():t)+DHAKA).toISOString().slice(0,10);
+const revOk=v=>v!=null&&v!==""&&Number.isFinite(Number(v));
+function patchCfg(fn){ const c=rdj(CFG_KEY,{}); fn(c); return wrj(CFG_KEY,c); }
+function syncProg(){ wrj(LOCK_KEY,{at:Date.now()}); }          /* heartbeat: a long download can never let the lock expire mid-sync */
+function stableStr(v){ if(v===null||typeof v!=="object") return JSON.stringify(v); if(Array.isArray(v)) return "["+v.map(stableStr).join(",")+"]"; return "{"+Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+stableStr(v[k])).join(",")+"}"; }
+/* the locally CONFIRMED server revision: never a guess. cfg -> small dedicated key -> IndexedDB */
+async function readLastOk(cfg){
+  const l=cfg&&cfg.lastOk; if(l&&revOk(l.revision)) return l;
+  const b=rdj(LASTOK_KEY,null); if(b&&revOk(b.revision)) return b;
+  try{ const i=await idbGet("lastok"); if(i&&revOk(i.revision)) return i; }catch(e){}
+  return null;
+}
+async function saveLastOk(rec,fn){
+  const a=patchCfg(c=>{ c.lastOk=rec; fn&&fn(c); }), b=wrj(LASTOK_KEY,rec); let c2=false; try{ await idbPut("lastok",rec); c2=true; }catch(e){}
+  return {ok:a||b||c2,cfgSaved:a};
+}
+async function fetchServerStatus(cfg){
+  const r=await callServer(cfg,{action:"status",token:cfg.token},25000); syncProg();
+  if(r.ok!==true||!revOk(r.revision)) return {ok:false,code:(r.ok===true?"status_failed":(ERR[r.code]?r.code:"status_failed")),http:r.http};
+  patchCfg(c=>{ c.serverRev=Number(r.revision); c.serverRevAt=S.nowISO(); });
+  return {ok:true,revision:Number(r.revision),count:Number(r.count)||0,lastAt:r.lastAt||null};
+}
+async function recoverySnapshot(tag,payload){
+  try{ const cur=await idbGet("presync").catch(()=>null); if(cur) await idbPut("presync_prev",cur);
+    await idbPut("presync",{savedAt:S.nowISO(),tag,counts:countsOf(payload.data),payload}); return true; }catch(e){ return false; }
+}
+async function fetchRemoteLatest(cfg,serverRev){
+  const adm=getAdm(); if(!adm) return {ok:false,code:"need_admin"};
+  const l=await callServer(cfg,{action:"list",token:cfg.token,adminToken:adm},30000); syncProg();
+  if(l.ok!==true) return {ok:false,code:ERR[l.code]?l.code:"remote_invalid",http:l.http};
+  const files=(l.files||[]).map(f=>({f,r:(/-r(\d+)\.json$/.exec(f&&f.name||"")||[])[1]})).filter(x=>x.r!=null);
+  let pick=files.find(x=>Number(x.r)===serverRev); if(!pick&&files.length) pick=files.slice().sort((a,b)=>Number(b.r)-Number(a.r))[0];
+  if(!pick) return {ok:false,code:"remote_invalid"};
+  const g=await driveGet(cfg,adm,pick.f.id); syncProg();
+  if(!g.ok) return {ok:false,code:"remote_invalid",detail:g.msg};
+  return {ok:true,payload:g.payload,content:g.content,fileName:pick.f.name,rev:Number(pick.r)};
+}
+/* compare by stable ids. missing = in remote only (safe to ADD). differing = same id (or same business key) but different content (NEVER auto-resolved). */
+function compareData(local,remote){
+  const out={missing:{},differing:{},nMissing:0,nDiff:0,finDiff:0};
+  SYNC_KEYS.forEach(k=>{
+    const L=(Array.isArray(local[k])?local[k]:[]).filter(r=>r&&typeof r==="object"), R=Array.isArray(remote[k])?remote[k]:[];
+    const byId=new Map(), seen=new Set(); L.forEach(r=>{ if(r.id!=null) byId.set(String(r.id),r); seen.add(stableStr(r)); });
+    const ck=r=>[r.memberId,r.date,String(r.centerId)].join("|");
+    const colMap=k==="collections"?new Map(L.map(r=>[ck(r),r])):null, dayMap=k==="dayClosings"?new Map(L.map(r=>[r.date,r])):null;
+    const bad=r=>{ (out.differing[k]=out.differing[k]||[]).push(r.id); out.nDiff++; if(FIN_KEYS.has(k)) out.finDiff++; };
+    R.forEach(r=>{
+      if(!r||typeof r!=="object") return;
+      const e=r.id!=null?byId.get(String(r.id)):null;
+      if(e){ if(stableStr(e)!==stableStr(r)) bad(r); return; }
+      if(r.id==null&&seen.has(stableStr(r))) return;
+      if(colMap&&colMap.has(ck(r))){ const x=colMap.get(ck(r)); if(Number(x.savingsAmount||0)===Number(r.savingsAmount||0)&&Number(x.loanAmount||0)===Number(r.loanAmount||0)) return; bad(r); return; }
+      if(dayMap&&dayMap.has(r.date)){ bad(r); return; }
+      (out.missing[k]=out.missing[k]||[]).push(r); out.nMissing++;
+    });
+  });
+  return out;
+}
+/* ADD-ONLY merge: existing local records are never modified or removed. Full rollback on any failure. */
+function applyAdditive(missing){
+  const D=DBx(), snap={}; SYNC_KEYS.forEach(k=>{ snap[k]=JSON.stringify(D[k]||[]); }); const metaSnap=JSON.stringify(D.meta); let added=0;
+  try{
+    Object.keys(missing).forEach(k=>{ if(!Array.isArray(D[k])) D[k]=[]; missing[k].forEach(r=>{ D[k].push(JSON.parse(JSON.stringify(r))); added++; }); });
+    const seqs={surveys:"surveySeq",loans:"loanSeq",followups:"followupSeq"};
+    Object.keys(seqs).forEach(k=>(missing[k]||[]).forEach(r=>{ const n=parseInt(String(r.displayId||"").replace(/\D/g,""),10); if(n&&n>(D.meta[seqs[k]]||0)) D.meta[seqs[k]]=n; }));
+    for(const k of Object.keys(missing)){ if(!S.persist(k)) throw new Error("persist "+k); }
+    S.persist("meta");
+    return {ok:true,added};
+  }catch(e){
+    SYNC_KEYS.forEach(k=>{ D[k]=JSON.parse(snap[k]); }); try{ D.meta=JSON.parse(metaSnap); }catch(_){}
+    SYNC_KEYS.forEach(k=>{ try{ S.persist(k); }catch(_){} }); try{ S.persist("meta"); }catch(_){}
+    return {ok:false};
+  }
+}
+function conflictSummary(cmp){ const byKey={}; Object.keys(cmp.differing).forEach(k=>{ byKey[k]=cmp.differing[k].length; }); return byKey; }
+
+/* Reconcile local data with the server's CURRENT copy. Returns {ok,payload} or {ok:false,code}. */
+async function reconcile(cfg,payload,serverRev,job,opts){
+  const remote=await fetchRemoteLatest(cfg,serverRev);
+  if(!remote.ok) return {ok:false,code:remote.code,http:remote.http};
+  const cmp=compareData(payload.data,remote.payload.data);
+  job.remote={rev:remote.rev,file:remote.fileName,missing:cmp.nMissing,differing:cmp.nDiff};
+  if(cmp.nDiff>0&&!opts.acceptConflict){
+    try{ await idbPut("conflict_remote",{rev:remote.rev,fileName:remote.fileName,savedAt:S.nowISO(),content:remote.content}); }catch(e){}
+    patchCfg(c=>{ c.conflict={at:S.nowISO(),remoteRev:serverRev,fileName:remote.fileName,nMissing:cmp.nMissing,nDiff:cmp.nDiff,finDiff:cmp.finDiff,byKey:conflictSummary(cmp)}; });
+    return {ok:false,code:"conflict_review"};
+  }
+  if(cmp.nMissing>0){
+    if(!(await recoverySnapshot("before-merge",payload))) return {ok:false,code:"snapshot_failed"};
+    try{ await idbPut("remote_rev"+remote.rev,{savedAt:S.nowISO(),fileName:remote.fileName,content:remote.content}); }catch(e){}
+    const r=applyAdditive(cmp.missing); if(!r.ok) return {ok:false,code:"merge_failed"};
+    job.merged=r.added; try{ if(window.SP_ROUTE) setTimeout(()=>window.SP_ROUTE(),30); }catch(e){}
+    payload=SP_BK.buildBackupPayload();
+  }
+  patchCfg(c=>{ c.conflict=null; });
+  return {ok:true,payload,merged:job.merged||0};
+}
+
+/* --- upload (Success ONLY when the server confirms storage + echoes our hash + a follow-up status check agrees) --- */
 async function runSync(opts){
   opts=opts||{}; const cfg0=rdj(CFG_KEY,{});
   const say=m=>{ if(!opts.silent) S.toast(m,4000); };
@@ -8999,28 +9124,58 @@ async function runSync(opts){
   const job={id:S.uid(),at:S.nowISO(),status:"Pending",trigger:opts.trigger||"manual"};
   if(!navigator.onLine){ job.code="offline"; job.msg=ERR.offline; logJob(job); setErr(cfg0,"offline",ERR.offline,false); say("⏳ "+ERR.offline); repaintCloud(); return; }
   if(!lockTake()){ say("আরেকটি Sync চলছে"); return; }
-  const dc0=dirtyCounter;
+  let dc0=dirtyCounter;
+  const fail=(code,extra,http)=>{ job.status="Failed"; job.code=code; if(http) job.http=http; job.msg=(ERR[code]||ERR.unknown)+(extra||"")+(http?" (HTTP "+http+")":"");
+    const retryable=!NO_RETRY.has(code); const prevN=((rdj(CFG_KEY,{}).retry||{}).n)||0;
+    if(retryable&&prevN+1>MAX_RETRIES){ patchCfg(c=>{ c.lastErr={at:S.nowISO(),code,msg:job.msg+" — "+ERR.exhausted}; c.retry={n:prevN+1,exhausted:true}; c.dirty=true; }); }
+    else setErr(rdj(CFG_KEY,{}),code,job.msg,retryable);
+    say("❌ Backup সম্পন্ন হয়নি: "+job.msg); };
   try{
-    const payload=SP_BK.buildBackupPayload(), dataStr=JSON.stringify(payload.data), hash=await sha(dataStr);
-    const cfg=rdj(CFG_KEY,{});
-    if(!opts.force && cfg.lastOk && cfg.lastOk.hash===hash){ job.status="Success"; job.msg="কোনো নতুন পরিবর্তন নেই — আগের সার্ভার-নিশ্চিত কপিই বর্তমান"; if(dirtyCounter===dc0){ cfg.dirty=false; } cfg.retry=null; wrj(CFG_KEY,cfg); logJob(job); say("☁️ "+job.msg); return; }
+    let payload=SP_BK.buildBackupPayload();
+    /* 1) validate JSON + structure before anything leaves the phone */
+    try{ JSON.parse(JSON.stringify(payload.data)); }catch(e){ return fail("invalid"," (স্থানীয় ডেটা JSON হয়নি)"); }
+    let vv; try{ vv=SP_BK.validateBackupPayload(JSON.parse(JSON.stringify(payload))); }catch(e){ vv={ok:false}; }
+    if(!vv||vv.ok===false) return fail("invalid"," (স্থানীয় ডেটা বৈধ ব্যাকআপ কাঠামো নয়)");
+    const d0=payload.data;
+    if(!opts.force && ((d0.members||[]).length+(d0.collections||[]).length+(d0.centers||[]).length)===0){ job.status="Failed"; job.code="empty_guard"; job.msg="অ্যাপে কোনো ডেটা নেই — খালি ডেটা দিয়ে Cloud কপি ওভাররাইট ঠেকাতে আপলোড থামানো হয়েছে"; setErr(cfg0,"empty_guard",job.msg,false); say("❌ "+job.msg); return; }
     job.status="In Progress"; logJob(job); repaintCloud();
-    const d0=payload.data; if(!opts.force && ((d0.members||[]).length+(d0.collections||[]).length+(d0.centers||[]).length)===0){ job.status="Failed"; job.code="empty_guard"; job.msg="অ্যাপে কোনো ডেটা নেই — খালি ডেটা দিয়ে Cloud কপি ওভাররাইট ঠেকাতে আপলোড থামানো হয়েছে"; setErr(cfg,"empty_guard",job.msg,false); say("❌ "+job.msg); return; }
-    const d=payload.data, counts={members:(d.members||[]).length,collections:(d.collections||[]).length,centers:(d.centers||[]).length,loans:(d.loans||[]).length,surveys:(d.surveys||[]).length};
-    const res=await callServer(cfg,{action:"upload",token:cfg.token,format:"SohelProBackup",schemaVersion:2,hash,counts,baseRevision:(cfg.lastOk&&cfg.lastOk.revision!=null)?Number(cfg.lastOk.revision):null,force:!!opts.force,clientTime:S.nowISO(),payload});
-    const fresh=rdj(CFG_KEY,{});
-    if(res.ok===true && res.stored===true && res.hash===hash && res.revision!=null && Number(res.bytes)>0){
-      job.status="Success"; job.msg="সার্ভার নিশ্চিত করেছে — revision "+res.revision+(res.duplicate?" (একই কপি আগে থেকেই ছিল)":"")+(res.fileName?" · "+res.fileName:"");
-      fresh.lastOk={hash,revision:Number(res.revision),at:S.nowISO(),fileName:res.fileName||""}; if(dirtyCounter===dc0) fresh.dirty=false; fresh.retry=null; fresh.lastErr=null;
-      if(!wrj(CFG_KEY,fresh)) job.msg+=" (⚠️ স্থানীয় স্ট্যাটাস সংরক্ষণ হয়নি)";
-      say("☁️ Cloud Backup সফল — "+job.msg);
-    } else {
-      let code=res.code||"unknown"; if(res.ok===true) code="bad_response";
-      if(code==="http"&&res.http) job.http=res.http;
-      job.status="Failed"; job.code=code; job.msg=(ERR[code]||ERR.unknown)+(code==="http"&&res.http?" (HTTP "+res.http+")":"");
-      setErr(fresh,code,job.msg,!NO_RETRY.has(code));
-      say("❌ Backup সম্পন্ন হয়নি: "+job.msg);
+    /* 2) recovery snapshot of what we are about to upload (IndexedDB; the single emergency slot used by Restore is left alone) */
+    job.snapshot=await recoverySnapshot("pre-upload",payload); syncProg();
+    /* 3) HANDSHAKE: ask the server for its real revision. Never assume 0, never guess. */
+    const st=await fetchServerStatus(cfg0);
+    if(!st.ok) return fail(st.code,"",st.http);
+    const serverRev=st.revision, lastOk=await readLastOk(rdj(CFG_KEY,{})), known=lastOk?Number(lastOk.revision):null;
+    job.serverRev=serverRev; job.baseKnown=known;
+    let base=null;
+    if(serverRev===0) base=null;                       /* genuinely empty server: first upload */
+    else if(known===serverRev) base=serverRev;         /* we hold the confirmed latest revision */
+    else {                                              /* null / older / newer than server: reconcile, never overwrite */
+      const rc=await reconcile(rdj(CFG_KEY,{}),payload,serverRev,job,opts);
+      if(!rc.ok) return fail(rc.code,rc.detail?" — "+rc.detail:"",rc.http);
+      payload=rc.payload; base=serverRev; dc0=dirtyCounter;
     }
+    const dataStr=JSON.stringify(payload.data), hash=await sha(dataStr), d=payload.data;
+    const counts={members:(d.members||[]).length,collections:(d.collections||[]).length,centers:(d.centers||[]).length,loans:(d.loans||[]).length,surveys:(d.surveys||[]).length};
+    const rt=countsOf(JSON.parse(dataStr)); if(rt.members!==counts.members||rt.collections!==counts.collections||rt.centers!==counts.centers) return fail("invalid"," (রেকর্ড সংখ্যা মেলেনি)");
+    const cfg=rdj(CFG_KEY,{}), verAtBuild=cfg.localVer||0;
+    if(!opts.force && lastOk && lastOk.hash===hash && known===serverRev && dhakaDay(Date.parse(lastOk.at))===dhakaDay()){
+      job.status="Success"; job.msg="কোনো নতুন পরিবর্তন নেই — আজকের সার্ভার-নিশ্চিত কপিই বর্তমান (rev "+serverRev+")";
+      patchCfg(c=>{ if(dirtyCounter===dc0) c.dirty=false; c.retry=null; c.lastErr=null; c.syncedVer=verAtBuild; }); say("☁️ "+job.msg); return; }
+    /* 4) upload */
+    const res=await callServer(cfg,{action:"upload",token:cfg.token,format:"SohelProBackup",schemaVersion:2,hash,counts,baseRevision:base,force:!!opts.force,clientTime:S.nowISO(),payload}); syncProg();
+    let code=res.code||"unknown"; if(res.ok===true) code="bad_response";
+    const stored=res.ok===true&&res.stored===true&&res.hash===hash&&revOk(res.revision)&&Number(res.bytes)>0&&(serverRev===0||Number(res.revision)>=serverRev);
+    if(!stored) return fail(code,"",code==="http"?res.http:0);
+    if(res.counts&&typeof res.counts==="object"&&((revOk(res.counts.members)&&Number(res.counts.members)!==counts.members)||(revOk(res.counts.collections)&&Number(res.counts.collections)!==counts.collections))) return fail("verify_failed"," (রেকর্ড সংখ্যা: সার্ভার ≠ অ্যাপ)");
+    /* 5) verify uploaded file metadata with an independent status call */
+    const v=await fetchServerStatus(cfg);
+    if(!v.ok||v.revision!==Number(res.revision)||!(v.count>0)) return fail("verify_failed",v.ok?" (সার্ভার rev "+v.revision+", প্রত্যাশিত "+res.revision+")":" ("+(ERR[v.code]||"")+")");
+    /* 6) ONLY NOW is the version saved */
+    const rec={hash,revision:Number(res.revision),at:S.nowISO(),fileName:res.fileName||"",counts};
+    const sv=await saveLastOk(rec,c=>{ if(dirtyCounter===dc0) c.dirty=false; c.retry=null; c.lastErr=null; c.conflict=null; c.syncedVer=verAtBuild; c.serverRev=rec.revision; c.serverRevAt=rec.at; });
+    job.status="Success"; job.msg="সার্ভার নিশ্চিত করেছে ও যাচাই হয়েছে — revision "+res.revision+(res.duplicate?" (একই কপি আগে থেকেই ছিল)":"")+(res.fileName?" · "+res.fileName:"")+(job.merged?" · সার্ভার থেকে "+job.merged+"টি নতুন রেকর্ড যুক্ত হয়েছে":"");
+    if(!sv.ok) job.msg+=" (⚠️ স্থানীয় স্ট্যাটাস সংরক্ষণ হয়নি — পরের Sync নিজে মিলিয়ে নেবে)";
+    say("☁️ Cloud Backup সফল — "+job.msg);
   }catch(e){ job.status="Failed"; job.code="unknown"; job.msg=ERR.unknown+": "+(e&&e.message||e); say("❌ "+job.msg); }
   finally{ lockFree(); job.endedAt=S.nowISO(); logJob(job); repaintCloud(); }
 }
@@ -9029,6 +9184,25 @@ function setErr(cfg,code,msg,retry){
   if(retry){ const n=((c.retry&&c.retry.n)||0)+1, mins=BACKOFF_MIN[Math.min(n-1,BACKOFF_MIN.length-1)]; c.retry={n,nextAt:Date.now()+mins*60000}; if(code!=="offline") schedule(mins*60000); }
   else c.retry=null;
   c.dirty = c.dirty || code==="offline"; wrj(CFG_KEY,c);
+}
+/* user-confirmed resolution: keep THIS phone's version of differing records; the server copy is downloaded to a file first */
+function openConflictDialog(){
+  const cfg=rdj(CFG_KEY,{}), c=cfg.conflict; if(!c){ S.toast("কোনো Conflict নেই"); return; }
+  const rows=Object.keys(c.byKey||{}).map(k=>`<div class="kv-row"><span class="k">${esc(CNT_LABEL[k]||k)}${FIN_KEYS.has(k)?" 💰":""}</span><span class="v">${c.byKey[k]}টি ভিন্ন</span></div>`).join("");
+  S.openModal(`<h3>⚖️ Sync Conflict পর্যালোচনা</h3>
+   <div class="small">সার্ভারের কপি (rev ${esc(c.remoteRev)}, ${esc(c.fileName||"")}) এবং এই ফোনের ডেটায় একই ID-র রেকর্ড ভিন্ন। কোনোটিই নিজে থেকে ওভাররাইট করা হয়নি।</div>
+   <div class="card" style="margin:8px 0">${rows||"—"}<div class="kv-row"><span class="k">সার্ভারে আছে, ফোনে নেই (নিরাপদে যোগ হবে)</span><span class="v">${c.nMissing||0}টি</span></div></div>
+   ${c.finDiff?`<div class="small" style="color:#b91c1c"><b>💰 ${c.finDiff}টি আর্থিক রেকর্ড ভিন্ন।</b> নিচের বিকল্পে এই ফোনের মান থাকবে; সার্ভারের মানগুলো আপনার ডিভাইসে নামানো ফাইলে ও Drive-এর আগের কপিতে থেকে যাবে। আগে ফাইলটি মিলিয়ে দেখুন।</div>`:""}
+   <div class="small muted" style="margin-top:6px">“এই ফোনের ডেটা রাখুন” চাপলে: ১) সার্ভারের কপি ফাইল হিসেবে নামবে, ২) জরুরি কপি রাখা হবে, ৩) শুধু ফোনে-না-থাকা রেকর্ড যোগ হবে, ৪) তারপর আপলোড হবে। কিছু মুছবে না।</div>
+   <div class="btn-row" style="margin-top:8px"><button class="btn" id="cf-keep">✅ এই ফোনের ডেটা রাখুন ও এগিয়ে যান</button><button class="btn ghost" id="cf-x">এখন নয় (কিছুই বদলাবে না)</button></div>`);
+  document.getElementById("cf-x").onclick=S.closeModal;
+  document.getElementById("cf-keep").onclick=async()=>{
+    let rec=null; try{ rec=await idbGet("conflict_remote"); }catch(e){}
+    if(!rec||!rec.content){ S.toast("সার্ভারের কপি পাওয়া যায়নি — আবার ‘এখনই Sync’ চাপুন"); S.closeModal(); return; }
+    S.downloadBlob("SohelPro-server-copy-rev"+rec.rev+"-"+S.todayISO()+".json",rec.content,"application/json",ok=>{
+      if(!ok){ S.toast("❌ ফাইল নামেনি — কিছুই বদলানো হয়নি"); return; }
+      S.closeModal(); runSync({trigger:"manual",acceptConflict:true}); });
+  };
 }
 
 /* --- panel --- */
@@ -9042,7 +9216,7 @@ function setAdm(v){ try{ if(v) localStorage.setItem(ADM_KEY,v); else localStorag
 function cloudPanel(){
   const cfg=rdj(CFG_KEY,{}), log=rdj(LOG_KEY,[]), D=DBx(), M_=D.meta||{};
   const hasU=!!cfg.url, hasW=!!cfg.token, hasA=!!getAdm();
-  const configured=hasU&&hasW, last=log.length?log[log.length-1]:null;
+  const configured=hasU&&hasW, last=log.length?log[log.length-1]:null, pendingN=Math.max(0,(cfg.localVer||0)-(cfg.syncedVer||0));
   let badge, color;
   if(!configured){ badge="⚪ Google Drive কনফিগার করা নেই"; color="#6b7280"; }
   else if(syncing||(last&&last.status==="In Progress"&&Date.now()-Date.parse(last.at)<120000)){ badge="🔵 In Progress"; color="#1d4ed8"; }
@@ -9058,9 +9232,22 @@ function cloudPanel(){
     <div class="section-title">📊 Backup Status</div>
     <div style="padding:6px 8px;border-radius:8px;background:#f3f4f6;color:${color}"><b>${badge}</b>${cfg.lastErr?`<div class="small" style="color:#b91c1c">${esc(cfg.lastErr.msg)} <span class="muted">(${esc(fmtT(cfg.lastErr.at))})</span></div>`:""}${cfg.retry&&cfg.retry.nextAt?`<div class="small muted">পরবর্তী স্বয়ংক্রিয় চেষ্টা: ${esc(fmtT(new Date(cfg.retry.nextAt).toISOString()))}</div>`:""}${cfg.dirty&&configured?`<div class="small">⏳ ${esc(fmtT(cfg.dirtyAt||S.nowISO()))} থেকে পরিবর্তন Google Drive-এ যায়নি</div>`:""}</div>
     <div class="kv-list" style="margin-top:6px">
-     ${kvr("সর্বশেষ সফল Google Drive Backup", cfg.lastOk?esc(fmtT(cfg.lastOk.at))+" · rev "+esc(cfg.lastOk.revision):"এখনো নেই")}
+     ${kvr("সর্বশেষ সফল Google Drive Backup", (cfg.lastOk&&revOk(cfg.lastOk.revision))?esc(fmtT(cfg.lastOk.at))+" · rev "+esc(cfg.lastOk.revision):"এখনো নেই")}
      ${kvr("সর্বশেষ Offline JSON Backup", M_.lastBackupAt?esc(fmtT(M_.lastBackupAt)):"—")}
     </div>
+   </div>
+   <div class="card" style="margin:8px 0" id="sync-dash">
+    <div class="section-title">🧭 Sync Dashboard</div>
+    <div class="kv-list">
+     ${kvr("সর্বশেষ সফল Backup", (cfg.lastOk&&revOk(cfg.lastOk.revision))?esc(fmtT(cfg.lastOk.at)):"এখনো কোনো নিশ্চিত Backup নেই")}
+     ${kvr("স্থানীয় সংস্করণ (Local)", "v"+esc(cfg.localVer||0)+(cfg.syncedVer!=null?" · সর্বশেষ Sync-কৃত v"+esc(cfg.syncedVer):""))}
+     ${kvr("সার্ভার সংস্করণ (Server)", revOk(cfg.serverRev)?"rev "+esc(cfg.serverRev)+(cfg.serverRevAt?" · "+esc(fmtT(cfg.serverRevAt)):""):"এখনো জানা নেই — Sync করলে জানা যাবে")}
+     ${kvr("অপেক্ষমান পরিবর্তন", pendingN>0||cfg.dirty?"⏳ "+(pendingN>0?pendingN+"টি সংরক্ষণ":"আছে")+" Drive-এ যায়নি":"✅ নেই")}
+     ${kvr("সর্বশেষ Sync ফলাফল", last?esc(last.status==="Success"?"✅ সফল":last.status==="Failed"?"❌ ব্যর্থ":last.status==="In Progress"?"🔵 চলছে":last.status)+" — "+esc(fmtT(last.at))+(last.msg?"<br><span class='small'>"+esc(last.msg)+"</span>":""):"এখনো নেই")}
+     ${kvr("Conflict অবস্থা", cfg.conflict?"<b style='color:#b91c1c'>⚠️ "+esc(cfg.conflict.nDiff)+"টি রেকর্ড ভিন্ন (rev "+esc(cfg.conflict.remoteRev)+") — পর্যালোচনা দরকার</b>":(cfg.lastErr&&cfg.lastErr.code==="need_admin"?"⚠️ ADMIN Token দরকার":"✅ নেই"))}
+    </div>
+    <div class="btn-row" style="margin-top:8px;flex-wrap:wrap"><button class="btn sm" id="sd-sync" ${configured?"":"disabled"}>🔄 Manual Sync</button><button class="btn sm secondary" id="sd-dl">⬇️ Download Backup</button><button class="btn sm secondary" id="sd-rs" ${configured?"":"disabled"}>♻️ Restore Backup</button>${cfg.conflict?`<button class="btn sm danger" id="sd-cf">⚖️ Conflict পর্যালোচনা</button>`:""}</div>
+    <div class="muted small" style="margin-top:6px">Download = এই ফোনের বর্তমান ডেটার JSON ফাইল। Restore = Drive-এর কপির তালিকা (প্রিভিউ + জরুরি কপিসহ)। অ্যাপের ডেটা সবসময় এই ফোনেই প্রধান; Sync কখনো স্থানীয় ডেটা মোছে না।</div>
    </div>
    <div class="card" style="margin:8px 0">
     <div class="section-title">☁️ Google Drive Backup / Sync</div>
@@ -9124,7 +9311,7 @@ function wireCloud(root){
     if(!urlIn&&!wIn&&!aIn&&!cfg.url&&!cfg.token){ S.toast("সংরক্ষণের জন্য কিছু লিখুন"); return; }
     const urlChanged=!!urlIn&&urlIn!==cfg.url;
     cfg.url=urlIn||cfg.url||""; cfg.token=wIn||cfg.token||"";
-    if(urlChanged||wIn){ cfg.lastErr=null; cfg.retry=null; }
+    if(urlChanged||wIn||aIn){ cfg.lastErr=null; cfg.retry=null; }
     if(cfg.auto===undefined) cfg.auto=true;
     if(!wrj(CFG_KEY,cfg)){ S.toast("❌ সেটিং সংরক্ষণ হয়নি (স্টোরেজ)"); return; }
     if(aIn&&!setAdm(aIn)){ S.toast("❌ ADMIN Token সংরক্ষণ হয়নি (স্টোরেজ)"); repaintCloud(); return; }
@@ -9137,6 +9324,10 @@ function wireCloud(root){
   on("sy-clr-all",()=>S.confirmDialog("URL ও সব Token মুছবেন?","Web App URL, WRITE ও ADMIN Token — সব এই ফোন থেকে মুছে যাবে। অ্যাপের ডেটা বা Drive-এর কপি মুছবে না।",()=>{ const c=rdj(CFG_KEY,{}); c.url=""; c.token=""; c.dirty=false; c.retry=null; c.lastErr=null; wrj(CFG_KEY,c); setAdm(""); S.toast("সংযোগ-তথ্য মোছা হয়েছে"); repaintCloud(); },"সব মুছুন",true));
   { const a=q("sy-auto"); if(a) a.addEventListener("change",e=>{ const c=rdj(CFG_KEY,{}); c.auto=e.target.checked; wrj(CFG_KEY,c); S.toast(c.auto?"স্বয়ংক্রিয় Sync চালু":"স্বয়ংক্রিয় Sync বন্ধ"); if(c.auto&&c.url&&c.token) schedule(3000); }); }
   on("cc-sync",()=>runSync({trigger:"manual"}));
+  on("sd-sync",()=>{ patchCfg(c=>{ c.retry=null; }); runSync({trigger:"manual"}); });
+  on("sd-dl",()=>{ try{ SP_BK.performBackup(); }catch(e){ S.toast("❌ Backup ব্যর্থ: "+e.message); } });
+  on("sd-rs",()=>openDriveList());
+  on("sd-cf",()=>openConflictDialog());
   on("cc-force",()=>S.confirmDialog("জোর করে আপলোড?","এটি সার্ভারের সর্বশেষ কপির জায়গায় এই ফোনের ডেটা নতুন কপি হিসেবে রাখবে। সার্ভারের আগের ফাইলগুলো Drive-এ থাকবে। নিশ্চিত?",()=>runSync({trigger:"manual",force:true}),"আপলোড",true));
   on("cc-test",async()=>{ const o=q("cc-test-out"); o.textContent="⏳ পরীক্ষা চলছে…"; const cfg=rdj(CFG_KEY,{});
     if(!navigator.onLine){ o.textContent="❌ "+ERR.offline; return; }
@@ -9161,7 +9352,7 @@ async function driveGet(cfg,adm,fileId){
 }
 async function afterDriveRestore(cfg,name){
   try{ const st2=await callServer(cfg,{action:"status",token:cfg.token},20000); const m2=/-r(\d+)\.json$/.exec(name); const c3=rdj(CFG_KEY,{});
-    if(st2.ok===true&&m2&&Number(m2[1])===Number(st2.revision)){ c3.lastOk={hash:"",revision:Number(st2.revision),at:st2.lastAt||S.nowISO(),fileName:name}; wrj(CFG_KEY,c3); } }catch(e){}
+    if(st2.ok===true&&m2&&Number(m2[1])===Number(st2.revision)){ c3.lastOk={hash:"",revision:Number(st2.revision),at:st2.lastAt||S.nowISO(),fileName:name}; c3.serverRev=Number(st2.revision); c3.conflict=null; wrj(CFG_KEY,c3); wrj(LASTOK_KEY,c3.lastOk); } }catch(e){}
 }
 function openDriveList(){
   const cfg=rdj(CFG_KEY,{});

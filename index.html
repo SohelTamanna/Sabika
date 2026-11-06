@@ -9048,7 +9048,7 @@ async function fetchRemoteLatest(cfg,serverRev){
   const l=await callServer(cfg,{action:"list",token:cfg.token,adminToken:adm},30000); syncProg();
   if(l.ok!==true) return {ok:false,code:(l.code==="auth"||l.code==="locked"||l.code==="timeout"||l.code==="network")?l.code:"remote_invalid",http:l.http,detail:"তালিকা আনা যায়নি: "+(l.code||"?")+(l.msg?" "+l.msg:"")+(l.code==="auth"?" (ADMIN Token ভুল?)":"")};
   const all=(l.files||[]).filter(f=>f&&f.id&&f.name);
-  if(!all.length) return {ok:false,code:"remote_invalid",detail:"Drive তালিকা খালি (সার্ভার rev "+serverRev+")"};
+  if(!all.length) return {ok:true,empty:true};   /* server lists zero backup files: nothing remote can be lost or merged */
   const rn=f=>{ const m=/-r(\d+)\.json$/.exec(f.name||""); return m?Number(m[1]):null; };
   const tm=f=>Date.parse(f.modified||f.modifiedTime||f.updated||f.createdTime||"")||0;
   /* candidates: exact revision, then highest revision, then newest by time/name; try each until one validates */
@@ -9105,7 +9105,8 @@ function conflictSummary(cmp){ const byKey={}; Object.keys(cmp.differing).forEac
 /* Reconcile local data with the server's CURRENT copy. Returns {ok,payload} or {ok:false,code}. */
 async function reconcile(cfg,payload,serverRev,job,opts){
   const remote=await fetchRemoteLatest(cfg,serverRev);
-  if(!remote.ok) return {ok:false,code:remote.code,http:remote.http};
+  if(!remote.ok) return {ok:false,code:remote.code,http:remote.http,detail:remote.detail};
+  if(remote.empty){ job.remote={empty:true}; patchCfg(c=>{ c.conflict=null; }); return {ok:true,payload,merged:0}; }
   const cmp=compareData(payload.data,remote.payload.data);
   job.remote={rev:remote.rev,file:remote.fileName,missing:cmp.nMissing,differing:cmp.nDiff};
   if(cmp.nDiff>0&&!opts.acceptConflict){
